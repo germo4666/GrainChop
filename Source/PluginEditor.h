@@ -90,6 +90,7 @@ private:
     bool reattaching = false;
     std::array<juce::Slider, 8> knobs;
     std::array<float, 8> knobAnim {};
+    std::array<juce::Label, 8> knobNames, knobValues;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> knobAtt;
     juce::OwnedArray<gc::Key> pageKeys, funcKeys, pads;
 

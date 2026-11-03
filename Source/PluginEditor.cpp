@@ -437,6 +437,9 @@ GrainChopEditor::GrainChopEditor (GrainChopProcessor& p) : AudioProcessorEditor 
                 screen.showValue (kParams[pi].name, prm->getCurrentValueAsText(), ui::screenColour (i));
         };
         addAndMakeVisible (k);
+        for (auto* l : { &knobNames[(size_t) i], &knobValues[(size_t) i] }) { l->setJustificationType (juce::Justification::centred); l->setInterceptsMouseClicks (false, false); addAndMakeVisible (*l); }
+        knobNames[(size_t) i].setFont (font (11.5f, true)); knobNames[(size_t) i].setColour (juce::Label::textColourId, ui::ink);
+        knobValues[(size_t) i].setFont (font (10.5f)); knobValues[(size_t) i].setColour (juce::Label::textColourId, ui::inkSoft);
     }
 
     for (int i = 0; i < kNumPages; ++i)
@@ -506,6 +509,7 @@ void GrainChopEditor::setPage (int pg)
         knobAtt[(size_t) i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, kParams[pi].id, knobs[(size_t) i]);
         knobs[(size_t) i].setDoubleClickReturnValue (true, kParams[pi].def);
         knobs[(size_t) i].setTooltip (kParams[pi].name);
+        knobNames[(size_t) i].setText (juce::String (kParams[pi].name).toLowerCase(), juce::dontSendNotification);
     }
     reattaching = false;
     screen.setPage (pg);
@@ -524,6 +528,9 @@ void GrainChopEditor::timerCallback()
         if (std::abs (target - knobAnim[(size_t) i]) > 0.0005f || ! k.getProperties().contains ("anim")) { k.getProperties().set ("anim", knobAnim[(size_t) i]); k.repaint(); }
     }
 
+    for (int i = 0; i < 8; ++i)
+        if (auto* prm = proc.apvts.getParameter (kParams[page * 8 + i].id))
+            knobValues[(size_t) i].setText (prm->getCurrentValueAsText(), juce::dontSendNotification);
     for (auto* k : pageKeys) k->tick();
     for (auto* k : funcKeys) k->tick();
 
@@ -565,7 +572,13 @@ void GrainChopEditor::resized()
     screen.setBounds (top.removeFromLeft (460));
     top.removeFromLeft (24);
     const int cw = top.getWidth() / 4, ch = top.getHeight() / 2;
-    for (int i = 0; i < 8; ++i) knobs[(size_t) i].setBounds (top.getX() + (i % 4) * cw, top.getY() + (i / 4) * ch, cw, ch);
+    for (int i = 0; i < 8; ++i)
+    {
+        auto cell = juce::Rectangle<int> (top.getX() + (i % 4) * cw, top.getY() + (i / 4) * ch, cw, ch);
+        knobValues[(size_t) i].setBounds (cell.removeFromBottom (13));
+        knobNames[(size_t) i].setBounds (cell.removeFromBottom (14));
+        knobs[(size_t) i].setBounds (cell);
+    }
 
     r.removeFromTop (16);
     auto mid = r.removeFromTop (46);
