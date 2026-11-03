@@ -1,52 +1,72 @@
 #pragma once
 #include "PluginProcessor.h"
 
+// ============================================================================
+//  GrainChop UI: OP-1 inspired. Light aluminium body, black animated screen,
+//  four-colour encoders, chunky keys.
+// ============================================================================
 namespace gc
 {
-namespace col
+namespace ui
 {
-    const juce::Colour body { 0xff131415 }, panel { 0xff1b1d1f }, edge { 0xff2c2f32 }, key { 0xff232629 }, screen { 0xff040505 },
-                       fg { 0xffdde0da }, mute { 0xff858a84 }, dim { 0xff4b4f4c }, tape { 0xffe8b45a };
+    const juce::Colour bodyTop { 0xffe7e7e3 }, bodyBot { 0xffd3d3cf }, keyFace { 0xfff3f3f0 }, keyEdge { 0xffbdbdb8 },
+                       ink { 0xff26262a }, inkSoft { 0xff8c8c8a }, screen { 0xff000000 },
+                       blue { 0xff3d73e0 }, green { 0xff35b56e }, white { 0xfff2f2f0 }, orange { 0xfff2671f };
+    inline juce::Colour encoderColour (int i) { static const juce::Colour c[4] = { blue, green, white, orange }; return c[i % 4]; }
+    inline juce::Colour screenColour (int i) { static const juce::Colour c[4] = { blue, green, juce::Colour (0xffd8d8d8), orange }; return c[i % 4]; }
 }
 
-class GCLook : public juce::LookAndFeel_V4
+class Look : public juce::LookAndFeel_V4
 {
 public:
-    GCLook();
     void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h, float pos, float start, float end, juce::Slider&) override;
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&, bool over, bool down) override;
-    void drawComboBox (juce::Graphics&, int w, int h, bool down, int, int, int, int, juce::ComboBox&) override;
-    juce::Font getComboBoxFont (juce::ComboBox&) override { return juce::Font (juce::FontOptions (13.0f)); }
-    juce::Font getTextButtonFont (juce::TextButton&, int) override { return juce::Font (juce::FontOptions (12.5f, juce::Font::bold)); }
-    juce::Colour accent { 0xffff6b4a };
 };
 
-class Pad : public juce::Component
+// A square OP-1 style key. Momentary or toggle, with an eased press animation.
+class Key : public juce::Component
 {
 public:
-    Pad (GrainChopProcessor& p, int i) : proc (p), index (i) {}
+    juce::String label, glyph;
+    std::function<void()> onPress, onRelease;
+    std::function<bool()> isLit;
+    juce::Colour litColour { ui::orange };
     void paint (juce::Graphics&) override;
-    void mouseDown (const juce::MouseEvent&) override;
-    void mouseUp (const juce::MouseEvent&) override;
-    juce::String label, sub; juce::Colour colour; float level = 0; bool isRoot = false, current = false, down = false;
-private:
-    GrainChopProcessor& proc; int index;
+    void mouseDown (const juce::MouseEvent&) override { down = true; if (onPress) onPress(); }
+    void mouseUp (const juce::MouseEvent&) override { down = false; if (onRelease) onRelease(); }
+    void tick();
+    bool down = false; float press = 0, glow = 0, glowTarget = 0; juce::Colour glowColour { ui::orange };
 };
+
+struct Particle { float x, y, vx, vy, life, maxLife, size; juce::Colour c; };
 
 class Screen : public juce::Component
 {
 public:
     explicit Screen (GrainChopProcessor& p) : proc (p) {}
     void paint (juce::Graphics&) override;
-    void resized() override { overview.clear(); }
-    void pull();
-    juce::String presetLabel; int pageColour = 0;
+    void tick (double now);
+    void showValue (const juce::String& name, const juce::String& value, juce::Colour c);
+    void setPage (int p) { if (p != page) { lastPage = page; page = p; pageT = 0; } }
 private:
-    struct Ev { GrainEvent e; double t; };
     GrainChopProcessor& proc;
-    std::vector<Ev> evs;
-    std::vector<std::pair<float, float>> overview;
-    void buildOverview (int w);
+    int page = 0, lastPage = 0; float pageT = 1;
+    double now = 0, last = 0;
+    std::vector<Particle> parts;
+    struct Ring { float r, life, maxLife; };
+    std::vector<Ring> rings;
+    float reelAngle = 0, spin = 0, pumpViz = 0;
+    juce::String popName, popValue; juce::Colour popColour; float popT = 0;
+    std::array<float, 12> pcGlow {};
+
+    void drawPage (juce::Graphics&, juce::Rectangle<float>, int pg, float alpha);
+    void drawNote (juce::Graphics&, juce::Rectangle<float>);
+    void drawGrain (juce::Graphics&, juce::Rectangle<float>);
+    void drawColor (juce::Graphics&, juce::Rectangle<float>);
+    void drawRepeat (juce::Graphics&, juce::Rectangle<float>);
+    void drawDirt (juce::Graphics&, juce::Rectangle<float>);
+    void drawSpace (juce::Graphics&, juce::Rectangle<float>);
+    void drawTape (juce::Graphics&, juce::Rectangle<float>);
+    void drawMassive (juce::Graphics&, juce::Rectangle<float>);
 };
 } // namespace gc
 
@@ -61,31 +81,17 @@ public:
 private:
     void timerCallback() override;
     void setPage (int page);
-    void refreshPads();
+    void stepPreset (int d);
 
     GrainChopProcessor& proc;
-    gc::GCLook look;
+    gc::Look look;
     gc::Screen screen;
     int page = 0;
-    juce::OwnedArray<juce::TextButton> tabs;
+    bool reattaching = false;
     std::array<juce::Slider, 8> knobs;
-    std::array<juce::Label, 8> knobNames, knobValues;
+    std::array<float, 8> knobAnim {};
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 8> knobAtt;
-    juce::OwnedArray<gc::Pad> pads;
-
-    juce::ComboBox presetBox, keyBox, scaleBox, chordBox, srcBox;
-    juce::TextButton prevPreset { "<" }, nextPreset { ">" }, octDown { "-" }, octUp { "+" };
-    juce::Label octLabel, keyHdr, chordHdr, srcHdr, macroHdr, perfHdr;
-    juce::TextButton holdBtn { "Hold" }, perPadBtn { "Per pad" }, randomBtn { "Randomize" }, stopBtn { "Stop all" };
-    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> comboAtt;
-    std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>> buttonAtt;
-
-    static constexpr int kNumMacros = 7;
-    std::array<juce::Slider, kNumMacros> macros;
-    std::array<juce::Label, kNumMacros> macroNames;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, kNumMacros> macroAtt;
-
-    int shownPreset = -1;
+    juce::OwnedArray<gc::Key> pageKeys, funcKeys, pads;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GrainChopEditor)
 };

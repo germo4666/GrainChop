@@ -39,6 +39,8 @@ public:
     std::array<std::atomic<int>, 16> padSrc {};
     std::atomic<int> lastPad { 0 }, currentPreset { 0 };
     std::atomic<bool> presetDirty { false };
+    std::atomic<double> uiPpq { 0 }, uiBpm { 120 };
+    std::atomic<float> uiLevel { 0 };
     float param (int i) const { return raw[(size_t) i]->load(); }
     gc::Music music() const;
     void setParam (int i, float plainValue);

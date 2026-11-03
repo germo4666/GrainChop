@@ -139,6 +139,8 @@ void GrainChopProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         handle (meta.getMessage(), false);
     }
     renderTo (n);
+    uiPpq.store (internalPpq); uiBpm.store (bpm);
+    uiLevel.store (juce::jmax (buffer.getMagnitude (0, 0, n), uiLevel.load() * 0.8f));
     internalPpq += n * ppqPerSample;
     midi.clear();
 }
