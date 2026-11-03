@@ -1,0 +1,70 @@
+name: Build Mac plugin
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get JUCE 8.0.4
+        run: git clone --depth 1 --branch 8.0.4 https://github.com/juce-framework/JUCE.git JUCE
+
+      - name: Configure (universal: Apple Silicon + Intel)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build VST3, AU and standalone app
+        run: cmake --build build --config Release -j 4 --target GrainChop_VST3 GrainChop_AU GrainChop_Standalone
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          A=build/GrainChop_artefacts/Release
+          for p in "$A/VST3/GrainChop.vst3" "$A/AU/GrainChop.component" "$A/Standalone/GrainChop.app"; do
+            codesign --force --deep --sign - "$p"
+          done
+          mkdir -p dist/GrainChop
+          cp -R "$A/VST3/GrainChop.vst3" "$A/AU/GrainChop.component" "$A/Standalone/GrainChop.app" dist/GrainChop/
+          cat > "dist/GrainChop/Install GrainChop.command" <<'SH'
+          #!/bin/bash
+          # Copies GrainChop into your plug-in folders and clears the "downloaded from the internet" flag.
+          cd "$(dirname "$0")"
+          mkdir -p ~/Library/Audio/Plug-Ins/VST3 ~/Library/Audio/Plug-Ins/Components
+          rm -rf ~/Library/Audio/Plug-Ins/VST3/GrainChop.vst3 ~/Library/Audio/Plug-Ins/Components/GrainChop.component
+          cp -R GrainChop.vst3 ~/Library/Audio/Plug-Ins/VST3/
+          cp -R GrainChop.component ~/Library/Audio/Plug-Ins/Components/
+          xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/GrainChop.vst3 ~/Library/Audio/Plug-Ins/Components/GrainChop.component 2>/dev/null
+          killall -9 AudioComponentRegistrar 2>/dev/null
+          echo ""
+          echo "GrainChop installed. Open Ableton, go to Settings > Plug-Ins, and press Rescan."
+          SH
+          sed -i '' 's/^          //' "dist/GrainChop/Install GrainChop.command"
+          chmod +x "dist/GrainChop/Install GrainChop.command"
+          cd dist && ditto -c -k --keepParent GrainChop GrainChop-mac.zip
+
+      - name: Check the AU loads (auval)
+        continue-on-error: true
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/GrainChop_artefacts/Release/AU/GrainChop.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 3
+          auval -v aumu Grch Mahy
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GrainChop-mac
+          path: dist/GrainChop-mac.zip
+
+      - name: Publish download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v0.1.${{ github.run_number }}"
+          gh release create "$TAG" dist/GrainChop-mac.zip --title "GrainChop $TAG" --notes "Download GrainChop-mac.zip below, unzip it, then right-click 'Install GrainChop.command' and choose Open."
